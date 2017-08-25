@@ -24,39 +24,42 @@ NUM_NODES_SIDE = 3
 class DQNAgent:
 	
       def __init__(self, state_size, actions):
-	self.state_size = state_size
-	self.action_size = actions
-	self.gamma = 0.95
-	self.epsilon = 1.0
-	self.epsilon_min = 0.01
+	self.state_size = state_size # this is input size
+	self.action_size = actions # output size
+	self.gamma = 0.95 # discount factor
+	self.epsilon = 1.0 # exploration rate
+	self.epsilon_min = 0.01 
 	self.epsilon_decay = 0.995
 	self.learning_rate = 0.001
 	self.model = self.build_model()
 
+      # model implementation this model has 3 lstm layers and one dense output layer	
       def build_model(self):
-	self.model = Sequential()
+	self.model = Sequential() 
 	self.model.add(LSTM(32,input_shape=self.state_size,activation='relu',return_sequence=True))
 	self.model.add(LSTM(16,activation='relu',return_sequence=True))
 	self.model.add(LSTM(8,activation='relu',return_sequence=True))
 	self.model.add(Dense(self.action_size,activation='linear'))
-	sgd = SGD(lr=0.01,decay=1e-6,momentum=0.9,nesterov=True)
+	sgd = SGD(lr=0.01,decay=1e-6,momentum=0.9,nesterov=True) # this model use stochastic gradient descent for calculate the loss
 	self.model.compile(loss='mse',optimizer=Adam(lr=self.learning_rate),metrics=['accuracy'])
 	return self.model
 
       def remember(self, state, action, reward, next_state):
-        self.memory.append((state, action, reward, next_state))
+        self.memory.append((state, action, reward, next_state)) # memory module of qlearning module save previous action ,inputs, reward it get and next input for the model
       
+      # predict the action when it recieve the relevant inputs
       def act(self, state):
-        if np.random.rand() <= self.epsilon:
+        if np.random.rand() <= self.epsilon: # until it get passed the epsilon value(initially) it will predict action randomly
           return random.randrange(self.actions_size)
-        act_values = self.model.predict(state)
-        return np.argmax(act_values[0])  # returns action
+        act_values = self.model.predict(state) # once the initial stage over it will start predicting actions relevant to the input
+        return np.argmax(act_values[0])  # returns the index of highest q value 
     
+      # this is experience replay module of model	
       def replay(self, batch_size):
         minibatch = random.sample(self.memory, batch_size)
         for state, action, reward, next_state, done in minibatch:
             target = reward + self.gamma * \
-                       np.amax(self.model.predict(next_state)[0])
+                       np.amax(self.model.predict(next_state)[0]) # belman equation to capture the target which has maximum future reward
             target_f = self.model.predict(state)
             target_f[0][action] = target
             self.model.fit(state, target_f, epochs=1, verbose=0)
@@ -148,8 +151,9 @@ def main(argv):
 		classifier = flowmon_helper.GetClassifier()
 		monitor.SerializeToXmlFile("wififlow.xml",True,True)
 		flow_stats_inputs = monitor.GetFlowStats()
-		flow_array = []
-		flow_array.append(flow_stat_inputs.txBytes)
+		flow_array = [] # this is original array which store the original inputs to the model
+		# this are the inputs to the model which will stored in flow_array
+		flow_array.append(flow_stat_inputs.txBytes) 
 		flow_array.append(flow_stat_inputs.rxBytes)
 		flow_array.append(flow_stat_inputs.txPackets)
 		flow_array.append(flow_stat_inputs.rxPackets)
@@ -159,8 +163,9 @@ def main(argv):
 		   flow_array.append(mean_delay)
 		mean_jitter = (flow_stat_inputs.jitterSum.GetSeconds() / (flow_stat_inputs.rxPackets-1))
 		flow_array.append(mean_jitter)
-		np.array(flow_array)
-		df = DataFrame(data=d,index=index)
+		np.array(flow_array) # then convert the flow array to numpy array reason to convert is numpy array will be a matrix and our model will only accept matrix inputs
+		# data preprocessing part here we normalized the dataset into range between 1 and 0 and then convert to time sequence dataset since our model is recurrent network it only accept time sequence data 
+		df = DataFrame(data=d,index=index) 
 		min_max_scaler = preprocessing.MinMaxScaler()
 		np_scaled = min_max_scaler.fit_transform(df)
 		df_normalized = pd.DataFrame(np_scaled)
@@ -188,6 +193,7 @@ def main(argv):
 			monitor.CheckForLostPackets()
 			classifier = flowmon_helper.GetClassifier()
 			monitor.SerializeToXmlFile("wififlow.xml",True,True)
+			# similar process describe in ahead happens here inside the loop
 			flow_stats_inputs_next = monitor.GetFlowStats()
 			flow_array_next = []
 			flow_array_next.append(flow_stat_inputs_next.txBytes)
@@ -206,13 +212,14 @@ def main(argv):
 			np_scaled_next = min_max_scaler_next.fit_transform(df_next)
 			df_normalized_next = pd.DataFrame(np_scaled_next)
 			X_next = sequence.pad_sequences(df_normalized_next, 10)
+			# here we calculate the reward this has to be improve here i calculate the reward based only on loss packets which is not good way another few factors to be added it has to be discussed
 			if(flow_stat_inputs_next.lostPackets > 10):
 				reward = -10
 			else:
 				reward = 20
-			actor.remember(X_train,action,X_next)
+			actor.remember(X_train,action,X_next) # finally saved the current step in model memory for experience replay module
 		        print("episode: {}/{}, score: {}".format(e, 500, t))
-		actor.replay(32)
+		actor.replay(32) # after 500 times of training then apply the experiece replay task to use what it learn so far
 		
 
 	import pylab
